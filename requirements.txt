@@ -1,5 +1,6 @@
 pandas
 plotly
-dotenv
+python-dotenv
 dash
 dash_bootstrap_components
+gunicorn
