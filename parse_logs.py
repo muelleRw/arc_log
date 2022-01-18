@@ -39,13 +39,13 @@ def parse_logs():
     df['time'] = pd.to_datetime(df['time'])
     df = df.sort_values('time')
     df = df[~df['type'].isna()]
-    df['date_h'] = df['time'].dt.floor('H')
-
+    
     return df
 #df.to_csv("logs.csv", index=False)
 
 
 def hourly_logs(df):
+    df['date_h'] = df['time'].dt.floor('H')
     by_hour = df.groupby(['date_h', 'source', 'type'])['time'].count().reset_index()
     by_hour.columns=["date", "source", "type", "errors"]
     return by_hour

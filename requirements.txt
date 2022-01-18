@@ -4,3 +4,4 @@ python-dotenv
 dash
 dash_bootstrap_components
 gunicorn
+requests

@@ -7,12 +7,22 @@ from dash import dcc
 
 import plotly.graph_objects as go
 import plotly.express as px
-from parse_logs import parse_logs, hourly_logs
+from parse_logs import hourly_logs#, parse_logs
+from rest_logs import get_token, get_logs
 import pandas as pd
+import os
 
-df = parse_logs()
+#docker build -t arc_logs .
+
+token = get_token()
+logs = get_logs(token, "SEVERE", server="REST")
+
+df = pd.DataFrame(logs['logMessages'])
+df['time'] = pd.to_datetime(df['time'], unit='ms', origin='unix').dt.tz_localize('UTC').dt.tz_convert(os.getenv('timezone'))
 df_hourly = hourly_logs(df)
+
 source = list(set(df_hourly['source']))
+source.insert(0,"All")
 source_labels = [{'label': x, 'value': x} for x in source]
 
 error_types = list(set(df_hourly['type']))
@@ -22,7 +32,7 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.layout = html.Div([
     
         dbc.Row([
-            dbc.Col(html.Div([html.Label("Source"), dcc.Dropdown(id='dropdown-source', options=source_labels, value="Rest")])),
+            dbc.Col(html.Div([html.Label("Source"), dcc.Dropdown(id='dropdown-source', options=source_labels, value="All")])),
             dbc.Col(html.Div([html.Label("Type"), dcc.Dropdown(id='dropdown-type', options=type_labels, value="SEVERE")])),
         ]),
         dcc.Loading(
@@ -50,8 +60,14 @@ app.layout = html.Div([
     ]
 )
 def update_figures(source, type):#need to make this check if outage is in db
-    df_hourly_filtered = df_hourly[df_hourly['type']==type]
-    by_hour = df_hourly_filtered[df_hourly['source'] == source]
+    if source != "All":
+        df_hourly_filtered = df_hourly[df_hourly['source'] == source]
+    else:
+        df_hourly_filtered = df_hourly.groupby(['date', 'type'])['errors'].sum().reset_index()
+        df_hourly_filtered.columns = ['date', 'type', 'errors']
+        df_hourly_filtered['source'] = source
+    
+    by_hour = df_hourly_filtered[df_hourly['type'] == type]
     by_hour = pd.DataFrame(pd.date_range(by_hour['date'].min(),by_hour['date'].max(),freq='H'),columns= ['date']).merge(by_hour,on=['date'],how='outer').fillna(0)
     by_hour.loc[by_hour['source'] == 0,"source"] = source
 
@@ -64,10 +80,10 @@ def update_figures(source, type):#need to make this check if outage is in db
             z=by_hour["errors"], y=by_hour["day"], x=by_hour["time"], 
             zauto=False, zmax= by_hour['errors'].quantile(0.99)
         ),
-        layout=go.Layout(title="ArcGIS Rest API Errors", template="simple_white")
+        layout=go.Layout(title="ArcGIS Rest Errors (Source Only)", template="simple_white")
     )
 
-    time_fig = px.scatter(df_hourly_filtered, x='date', y='errors', color='source', template="simple_white")
+    time_fig = px.scatter(df_hourly_filtered, x='date', y='errors', color='source', title="All Rest Errors by Source",  template="simple_white")
     return [heat_fig, time_fig]
 
 if __name__ == '__main__':
