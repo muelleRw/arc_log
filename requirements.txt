@@ -3,5 +3,6 @@ plotly
 python-dotenv
 dash
 dash_bootstrap_components
+dash-extensions
 gunicorn
 requests

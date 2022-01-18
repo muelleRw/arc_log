@@ -3,7 +3,7 @@ from dash.dependencies import Input, Output
 import dash_bootstrap_components as dbc
 from dash import dcc
 from dash import html
-from dash import dcc
+from dash_extensions.enrich import Dash, ServersideOutput, Output, Input, Trigger
 
 import plotly.graph_objects as go
 import plotly.express as px
@@ -13,27 +13,16 @@ import pandas as pd
 import os
 
 #docker build -t arc_logs .
-
-token = get_token()
-logs = get_logs(token, "SEVERE", server="REST")
-
-df = pd.DataFrame(logs['logMessages'])
-df['time'] = pd.to_datetime(df['time'], unit='ms', origin='unix').dt.tz_localize('UTC').dt.tz_convert(os.getenv('timezone'))
-df_hourly = hourly_logs(df)
-
-source = list(set(df_hourly['source']))
-source.insert(0,"All")
-source_labels = [{'label': x, 'value': x} for x in source]
-
-error_types = list(set(df_hourly['type']))
-type_labels = [{'label': x, 'value': x} for x in error_types]
+#docker run --add-host 54025GIS:10.54.0.22 -p 5000:80 arc_logs
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+server = app.server
 app.layout = html.Div([
-    
+        dcc.Store(id="store"),
+        html.Div(id="onload"),
         dbc.Row([
-            dbc.Col(html.Div([html.Label("Source"), dcc.Dropdown(id='dropdown-source', options=source_labels, value="All")])),
-            dbc.Col(html.Div([html.Label("Type"), dcc.Dropdown(id='dropdown-type', options=type_labels, value="SEVERE")])),
+            dbc.Col(html.Div([html.Label("Source"), dcc.Dropdown(id='dropdown-source', options=[{"label": "All", "value": "All"}], value="All")])),
+            dbc.Col(html.Div([html.Label("Type"), dcc.Dropdown(id='dropdown-type', options=[{"label": "All", "value": "All"}], value="SEVERE")])),
         ]),
         dcc.Loading(
             id="loading-2",
@@ -45,6 +34,29 @@ app.layout = html.Div([
     )
 ])
 
+@app.callback(
+    [
+        Output("store", "data"),
+        Output("dropdown-source", "options"),
+        Output("dropdown-type", "options")
+    ], 
+    Trigger("onload", "children")
+    )
+def query_df(value):
+    print("start Query")
+    token = get_token()
+    logs = get_logs(token, "SEVERE", server="REST")
+
+    df = pd.DataFrame(logs['logMessages'])
+
+    source = list(set(df['source']))
+    source.insert(0,"All")
+    source_labels = [{'label': x, 'value': x} for x in source]
+
+    error_types = list(set(df['type']))
+    type_labels = [{'label': x, 'value': x} for x in error_types]
+    
+    return [df.to_json(), source_labels, type_labels]
 
 
 @app.callback(
@@ -56,18 +68,28 @@ app.layout = html.Div([
     
     [
         Input('dropdown-source', 'value'),
-        Input('dropdown-type', 'value')
-    ]
+        Input('dropdown-type', 'value'),
+        Input("store", "data")
+    ],
+    prevent_initial_call=True
 )
-def update_figures(source, type):#need to make this check if outage is in db
+def update_figures(source, type, df_json):#need to make this check if outage is in db
+    
+    if df_json is None:
+        return
+    df = pd.read_json(df_json)
+    df['time'] = pd.to_datetime(df['time'], unit='ms', origin='unix').dt.tz_localize('UTC').dt.tz_convert(os.getenv('timezone'))
+    df = hourly_logs(df)
+    print(df)
     if source != "All":
-        df_hourly_filtered = df_hourly[df_hourly['source'] == source]
+        
+        df_hourly_filtered = df[df['source'] == source]
     else:
-        df_hourly_filtered = df_hourly.groupby(['date', 'type'])['errors'].sum().reset_index()
+        df_hourly_filtered = df.groupby(['date', 'type'])['errors'].sum().reset_index()
         df_hourly_filtered.columns = ['date', 'type', 'errors']
         df_hourly_filtered['source'] = source
     
-    by_hour = df_hourly_filtered[df_hourly['type'] == type]
+    by_hour = df_hourly_filtered[df_hourly_filtered['type'] == type]
     by_hour = pd.DataFrame(pd.date_range(by_hour['date'].min(),by_hour['date'].max(),freq='H'),columns= ['date']).merge(by_hour,on=['date'],how='outer').fillna(0)
     by_hour.loc[by_hour['source'] == 0,"source"] = source
 
