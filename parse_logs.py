@@ -1,3 +1,4 @@
+from distutils.log import error
 import pathlib
 import re
 import pandas as pd
@@ -7,14 +8,15 @@ import os
 load_dotenv()
 
 bracket_pattern = re.compile(r"\<(.+?)\>")
+error_pattern = re.compile(r"(?<=\>)(.+?)(?=\<)")
 
 errors = []
 def parse_logs():
-
     for txt_file in pathlib.Path(os.getenv("log_path")).glob('*.log'):
         with open(txt_file, "r") as f:
             for line in f:
-                error_match =  re.search(r"(?<=\>)(.+?)(?=\<)", line)
+                #error_match =  re.search(r"(?<=\>)(.+?)(?=\<)", line)
+                error_match = error_pattern.search(line)
                 details_match = bracket_pattern.match(line)
                 
                 if not details_match:

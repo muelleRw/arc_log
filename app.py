@@ -13,17 +13,18 @@ import pandas as pd
 import os
 
 #docker build -t arc_logs .
-#docker run --add-host 54025GIS:10.54.0.22 -p 5000:80 arc_logs
+#docker run --add-host 54025GIS:10.54.0.22 -p 5000:80 --name arc_logger arc_logs
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
 app.layout = html.Div([
+        dcc.Loading(id="loading-1", children=[
         dcc.Store(id="store"),
         html.Div(id="onload"),
         dbc.Row([
             dbc.Col(html.Div([html.Label("Source"), dcc.Dropdown(id='dropdown-source', options=[{"label": "All", "value": "All"}], value="All")])),
             dbc.Col(html.Div([html.Label("Type"), dcc.Dropdown(id='dropdown-type', options=[{"label": "All", "value": "All"}], value="SEVERE")])),
-        ]),
+        ])]),
         dcc.Loading(
             id="loading-2",
             children=[
@@ -43,7 +44,6 @@ app.layout = html.Div([
     Trigger("onload", "children")
     )
 def query_df(value):
-    print("start Query")
     token = get_token()
     logs = get_logs(token, "SEVERE", server="REST")
 
@@ -80,9 +80,8 @@ def update_figures(source, type, df_json):#need to make this check if outage is 
     df = pd.read_json(df_json)
     df['time'] = pd.to_datetime(df['time'], unit='ms', origin='unix').dt.tz_localize('UTC').dt.tz_convert(os.getenv('timezone'))
     df = hourly_logs(df)
-    print(df)
+    
     if source != "All":
-        
         df_hourly_filtered = df[df['source'] == source]
     else:
         df_hourly_filtered = df.groupby(['date', 'type'])['errors'].sum().reset_index()
@@ -104,8 +103,10 @@ def update_figures(source, type, df_json):#need to make this check if outage is 
         ),
         layout=go.Layout(title="ArcGIS Rest Errors (Source Only)", template="simple_white")
     )
-
-    time_fig = px.scatter(df_hourly_filtered, x='date', y='errors', color='source', title="All Rest Errors by Source",  template="simple_white")
+    if source == "All":
+        time_fig = px.scatter(df, x='date', y='errors', color='source', title="All Rest Errors by Source",  template="simple_white")
+    else:
+        time_fig = px.scatter(df_hourly_filtered, x='date', y='errors', color='source', title="All Rest Errors by Source",  template="simple_white")
     return [heat_fig, time_fig]
 
 if __name__ == '__main__':
